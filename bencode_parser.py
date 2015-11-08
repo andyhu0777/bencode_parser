@@ -1,4 +1,7 @@
 import json
+import md5
+import os
+
 
 class bencode_parser:
     def parse(self, src):
@@ -53,8 +56,34 @@ class bencode_parser:
         return d
 
 
+
+class bencode_unparser:
+    def unparse(self, parsed):
+        return self._boss(parsed)
+
+    def _boss(self, parsed):
+        if type(parsed) == int:
+            return 'i{}e'.format(str(parsed))
+        elif type(parsed) == str:
+            return '{}:{}'.format(len(parsed), parsed)
+        elif type(parsed) == list:
+            s = 'l'
+            for item in parsed:
+                s += self._boss(item)
+            s += 'e'
+            return s
+        elif type(parsed) == dict:
+            s = 'd'
+            for k, v in parsed.items():
+                s += self._boss(k)
+                s += self._boss(v)
+            s += 'e'
+            return s
+
+
 def test():
     ps = bencode_parser()
+    ups = bencode_unparser()
     testdb = [
             ('i-42e', -42),
             ('4:spam', 'spam'),
@@ -63,17 +92,38 @@ def test():
             ('lli555e6:123456deee', [[555, '123456', {}]]),
             ]
     for t in testdb:
-        print 'testing ' + t[0]
+        print 'testing ' + json.dumps(t[0]), json.dumps(t[1])
         parsed = ps.parse(t[0])
+        unparsed = ups.unparse(t[1])
         if json.dumps(parsed) != json.dumps(t[1]) or not ps.isok():
-            print 'Test failed: your res {} != {}, when src = {}'.format(parsed, t[1], t[0])
+            print 'Test Parser failed: your result {} != {}'.format(parsed, t[1])
+            break
+        if json.dumps(unparsed) != json.dumps(t[0]):
+            print 'Test Unparser failed: your result {} != {}'.format(unparsed, t[0])
             break
     else:
         print 'All test passed'
 
-#test()
+def test2():
+    ps = bencode_parser()
+    res = ps.parse(open('123.torrent', 'r').read())
+    print res['info']['files']
+    print ps.isok()
+
+
+def xizhongzi(parsed):
+    parsed['info']['name'] = md5.md5(parsed['info']['name']).hexdigest()
+    for file in parsed['info']['files']:
+        for key in file:
+            if key == 'path' or key == 'path.utf-8':
+                for i in range(len(file[key])):
+                    left, right = os.path.splitext(file[key][i])
+                    file[key][i] = md5.md5(left).hexdigest() + right
+    return parsed
 
 ps = bencode_parser()
-res = ps.parse(open('123.torrent', 'r').read())
-print res['info']['files']
-print ps.isok()
+ups = bencode_unparser()
+parsed_clean = xizhongzi(ps.parse(open('123.torrent', 'r').read()))
+print parsed_clean['info']['name']
+print parsed_clean['info']['files']
+open(parsed_clean['info']['name'] + '.torrent', 'w').write(ups.unparse(parsed_clean))
